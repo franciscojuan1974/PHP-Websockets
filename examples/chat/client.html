@@ -1,0 +1,171 @@
+<html>
+<head></head>
+<body>
+
+User: <input type='text' id='userName' style='width:200px' value='User' />
+<br />
+Message: <input type='text' id='message' style='width:200px' value='Hello' />
+<a href='javascript:send()'>Send</a>
+
+<div>
+<div id='msgs' style="width:400px;height:200px;border:1px solid #888;overflow:auto;display:inline-block;margin:2px"></div>
+<div id='users' style="width:200px;height:200px;border:1px solid #888;overflow:auto;display:inline-block;margin:2px"></div>
+</div>
+
+<script type="text/javascript" src='https://code.jquery.com/jquery-3.1.1.min.js'> // </script>
+<script type="text/javascript">
+var socket;
+var userID;
+
+var msgID = 0;
+function log(msg){
+   msgID++;
+   $('#msgs').append("<div id='msg" + msgID + "'>" + msg + "</div>");
+}
+
+function requestUser(){
+  userName = $('#userName').val();
+  if(socket){
+    var msg = {
+      type: "userName",
+      userID: userID,
+      data: userName
+    };
+    try {
+      socket.send(JSON.stringify(msg));
+      log("Request User Name: " + userName);
+    }catch(e) {
+      log(e);
+    }
+  }
+}
+
+function requestUserList(){
+  if(socket){
+    var msg = {
+      type: "userList",
+      userID: userID,
+      data: null
+    };
+    try {
+      socket.send(JSON.stringify(msg));
+      log("Request User List");
+    }catch(e) {
+      log(e);
+    }
+  }
+}
+
+var host = "ws://127.0.0.1:9000";
+var socket = null;
+var interval_isSocketReady = null;
+
+function socket_check_connect(){
+  if(socket.readyState==3) socket_start();
+}
+
+function socket_start() {
+  try {
+    socket = new WebSocket(host);
+    log('WebSocket - status ' + socket.readyState);
+    socket.onopen = function(msg) {
+                      log("Welcome - status " + this.readyState);
+                      if(interval_isSocketReady){
+                        clearInterval(interval_isSocketReady);
+                        interval_isSocketReady = null;
+                      }
+                    };
+    socket.onclose = function(msg) {
+                       log("Disconnected - status "+this.readyState);
+                       if(!interval_isSocketReady){
+                         interval_isSocketReady = setInterval(socket_check_connect,1000);
+                       }
+                     };
+    socket.onmessage = function(msg) {
+                         try{
+                           var msg = JSON.parse(msg.data);
+                           switch(msg.type){
+                             case 'userID':
+                               userID = msg.data;
+                               log("User login with ID: " + userID);
+                               requestUser();
+                               break;
+                             case 'userName':
+                               if(msg.userID==userID){
+                                 log("User Name Accepted: " + msg.data);
+                                 userName = msg.data;
+                                 requestUserList();
+                               }
+                               else{
+                                 log("User id: " + msg.userID + " change name to:" + msg.data);
+                               }
+                               break;
+                             case 'rejectUserName':
+                               log("User Name Reject. New user name:" + msg.data);
+                               $('#userName').val(msg.data);
+                               userName = msg.data;
+                               requestUserList();
+                               break;
+                             case 'userClose':
+                               log("Close User:" + msg.data.id);
+                               break;
+                             case 'userOpen':
+                               log("Open User:" + msg.data);
+                               break;
+                             case 'userList':
+                               log("User List Received");
+                               var html='';
+                               for(var i=0;i<msg.data.length;i++){
+                                 html+=msg.data[i].name + '<br />';
+                               }
+                               $('#users').html(html);
+                               break;
+                             case 'message':
+                               if(msg.userID!=userID){
+                                 log(new Date(msg.data.date).toLocaleString() + " $" + msg.data.fromName + ' -&gt; ' + msg.data.text);
+                               }
+                               break;
+                            }
+                         }catch(e){
+                           console.log(e);
+                         }
+                       };
+  }
+  catch(e){
+    log(e);
+  }
+}
+
+function send(){
+  if(socket && userID!=''){
+    userName = $('#userName').val();
+    var message = {
+      from: userID,
+      fromName: userName,
+      to: '-1',
+      toName: 'all',
+      text: $('#message').val(),
+      date: Date.now()
+    }
+    var msg = {
+      type: "message",
+      data: message,
+      userID: userID
+    };
+
+    try {
+      socket.send(JSON.stringify(msg));
+      log(new Date(msg.data.date).toLocaleString() + ' $Me -&gt; ' + msg.data.text);
+    }catch(e) {
+      log(e);
+    }
+  }
+}
+
+$(document).ready(function(){
+   socket_start();
+});
+</script>
+
+</body>
+</html>

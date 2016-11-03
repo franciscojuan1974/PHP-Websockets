@@ -1,7 +1,26 @@
 <?php
 
 //require_once('./daemonize.php');
-require_once('./users.php');
+class WebSocketUser {
+
+  public $socket;
+  public $id;
+  public $headers = array();
+  public $handshake = false;
+
+  public $handlingPartialPacket = false;
+  public $partialBuffer = "";
+
+  public $sendingContinuous = false;
+  public $partialMessage = "";
+  
+  public $hasSentClose = false;
+
+  function __construct($id, $socket) {
+    $this->id = $id;
+    $this->socket = $socket;
+  }
+}
 
 abstract class WebSocketServer {
 
@@ -24,8 +43,6 @@ abstract class WebSocketServer {
     socket_listen($this->master,20)                               or die("Failed: socket_listen()");
     $this->sockets['m'] = $this->master;
     $this->stdout("Server started\nListening on: $addr:$port\nMaster socket: ".$this->master);
-
-    
   }
 
   abstract protected function process($user,$message); // Called immediately when the data is recieved. 
@@ -103,8 +120,7 @@ abstract class WebSocketServer {
           $numBytes = @socket_recv($socket, $buffer, $this->maxBufferSize, 0); 
           if ($numBytes === false) {
             $sockErrNo = socket_last_error($socket);
-            switch ($sockErrNo)
-            {
+            switch ($sockErrNo){
               case 102: // ENETRESET    -- Network dropped connection because of reset
               case 103: // ECONNABORTED -- Software caused connection abort
               case 104: // ECONNRESET   -- Connection reset by peer
@@ -115,15 +131,13 @@ abstract class WebSocketServer {
               case 113: // EHOSTUNREACH -- No route to host
               case 121: // EREMOTEIO    -- Rempte I/O error -- Their hard drive just blew up.
               case 125: // ECANCELED    -- Operation canceled
-                
                 $this->stderr("Unusual disconnect on socket " . $socket);
-                $this->disconnect($socket, true, $sockErrNo); // disconnect before clearing error, in case someone with their own implementation wants to check for error conditions on the socket.
                 break;
               default:
-
-                $this->stderr('Socket error: ' . socket_strerror($sockErrNo));
+                $this->stderr("Socket error ($sockErrNo): " . socket_strerror($sockErrNo));
+                break;
             }
-            
+            $this->disconnect($socket, true, $sockErrNo); // disconnect before clearing error, in case someone with their own implementation wants to check for error conditions on the socket.
           }
           elseif ($numBytes == 0) {
             $this->disconnect($socket);
